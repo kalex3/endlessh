@@ -1,14 +1,16 @@
-FROM alpine:3.9 as builder
-RUN apk add --no-cache build-base
-ADD endlessh.c Makefile /
-RUN make
+FROM alpine:3.24 as builder
 
+COPY endlessh.c Makefile /
 
-FROM alpine:3.9
+RUN apk add --no-cache build-base && make
+
+FROM scratch
 
 COPY --from=builder /endlessh /
 
 EXPOSE 2222/tcp
+
+USER 1000:1000
 
 ENTRYPOINT ["/endlessh"]
 
