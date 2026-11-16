@@ -1,12 +1,13 @@
 .POSIX:
 CC       = cc
 CFLAGS   = -std=c99 -Wall -Wextra -Wno-missing-field-initializers -Os -static
+LDFLAGS  = -s
 PREFIX   = /usr/local
 
 all: endlessh
 
 endlessh: endlessh.c
-	$(CC) $(CFLAGS) -o $@ endlessh.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ endlessh.c
 
 install: endlessh
 	install -d $(DESTDIR)$(PREFIX)/bin
