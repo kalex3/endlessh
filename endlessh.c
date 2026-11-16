@@ -41,6 +41,9 @@
 
 #define DEFAULT_BIND_FAMILY  AF_UNSPEC
 
+#define FLAG_SPECIAL_SENT     (1 << 0)
+#define SPECIAL_MESSAGE       "Stay awhile and listen\r\n"
+
 #define XSTR(s) STR(s)
 #define STR(s) #s
 
@@ -119,6 +122,7 @@ struct client {
     struct client *next;
     int port;
     int fd;
+    int flags;
 };
 
 static struct client *
@@ -133,6 +137,7 @@ client_new(int fd, long long send_next)
         c->next = 0;
         c->fd = fd;
         c->port = 0;
+        c->flags = 0;
 
         /* Set the smallest possible recieve buffer. This reduces local
          * resource usage and slows down the remote end.
@@ -603,7 +608,15 @@ static struct client *
 sendline(struct client *client, int max_line_length, unsigned long *rng)
 {
     char line[256];
-    int len = randline(line, max_line_length, rng);
+    int len;
+    if (!(client->flags & FLAG_SPECIAL_SENT)) {
+        static const char special[] = SPECIAL_MESSAGE;
+        len = sizeof(special) - 1;
+        memcpy(line, special, len);
+        client->flags |= FLAG_SPECIAL_SENT;
+    } else {
+        len = randline(line, max_line_length, rng);
+    }
     for (;;) {
         ssize_t out = write(client->fd, line, len);
         logmsg(log_debug, "write(%d) = %d", client->fd, (int)out);
