@@ -15,5 +15,3 @@ EXPOSE 2222/tcp
 USER 1000:1000
 
 ENTRYPOINT ["/endlessh"]
-
-CMD ["-v"]

@@ -41,8 +41,9 @@
 
 #define DEFAULT_BIND_FAMILY  AF_UNSPEC
 
-#define FLAG_SPECIAL_SENT     (1 << 0)
-#define SPECIAL_MESSAGE       "Stay awhile and listen\r\n"
+#define FLAG_SPECIAL_SENT        (1 << 0)
+#define MAX_SPECIAL_MESSAGE      253
+#define DEFAULT_SPECIAL_MESSAGE  "Stay awhile and listen"
 
 #define XSTR(s) STR(s)
 #define STR(s) #s
@@ -306,6 +307,8 @@ struct config {
     int max_line_length;
     int max_clients;
     int bind_family;
+    int banner_len;
+    char banner[MAX_SPECIAL_MESSAGE + 3];
 };
 
 #define CONFIG_DEFAULT { \
@@ -314,6 +317,7 @@ struct config {
     .max_line_length = DEFAULT_MAX_LINE_LENGTH, \
     .max_clients     = DEFAULT_MAX_CLIENTS, \
     .bind_family     = DEFAULT_BIND_FAMILY, \
+    .banner_len      = 0, \
 }
 
 static void
@@ -397,6 +401,33 @@ config_set_bind_family(struct config *c, const char *s, int hardfail)
   }
 }
 
+static void
+config_set_banner(struct config *c, const char *s, int hardfail)
+{
+    while (*s == ' ' || *s == '\t')
+        s++;
+    size_t n = strlen(s);
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t' ||
+                     s[n - 1] == '\r' || s[n - 1] == '\n'))
+        n--;
+    if (n == 0) {
+        c->banner_len = 0;
+        c->banner[0] = 0;
+        return;
+    }
+    if (n > MAX_SPECIAL_MESSAGE || (n >= 4 && memcmp(s, "SSH-", 4) == 0)) {
+        fprintf(stderr, "endlessh: Invalid special message: %.*s\n", (int)n, s);
+        if (hardfail)
+            exit(EXIT_FAILURE);
+        return;
+    }
+    memcpy(c->banner, s, n);
+    c->banner[n] = '\r';
+    c->banner[n + 1] = '\n';
+    c->banner[n + 2] = 0;
+    c->banner_len = (int)n + 2;
+}
+
 enum config_key {
     KEY_INVALID,
     KEY_PORT,
@@ -405,6 +436,7 @@ enum config_key {
     KEY_MAX_CLIENTS,
     KEY_LOG_LEVEL,
     KEY_BIND_FAMILY,
+    KEY_SPECIAL_MESSAGE,
 };
 
 static enum config_key
@@ -416,7 +448,8 @@ config_key_parse(const char *tok)
         [KEY_MAX_LINE_LENGTH] = "MaxLineLength",
         [KEY_MAX_CLIENTS]     = "MaxClients",
         [KEY_LOG_LEVEL]       = "LogLevel",
-        [KEY_BIND_FAMILY]     = "BindFamily"
+        [KEY_BIND_FAMILY]     = "BindFamily",
+        [KEY_SPECIAL_MESSAGE] = "SpecialMessage"
     };
     for (size_t i = 1; i < sizeof(table) / sizeof(*table); i++)
         if (!strcmp(tok, table[i]))
@@ -430,69 +463,85 @@ config_load(struct config *c, const char *file, int hardfail)
     long lineno = 0;
     FILE *f = fopen(file, "r");
     if (f) {
-        char line[256];
+        char line[512];
         while (fgets(line, sizeof(line), f)) {
             lineno++;
+            size_t linelen = strlen(line);
+            if (linelen == sizeof(line) - 1 && line[linelen - 1] != '\n') {
+                fprintf(stderr, "%s:%ld: Line too long\n", file, lineno);
+                int ch;
+                while ((ch = fgetc(f)) != EOF && ch != '\n')
+                    ;
+                if (hardfail) exit(EXIT_FAILURE);
+                continue;
+            }
 
-            /* Remove comments */
             char *comment = strchr(line, '#');
             if (comment)
                 *comment = 0;
 
-            /* Parse tokes on line */
-            char *save = 0;
-            char *tokens[3];
-            int ntokens = 0;
-            for (; ntokens < 3; ntokens++) {
-                char *tok = strtok_r(ntokens ? 0 : line, " \r\n", &save);
-                if (!tok)
-                    break;
-                tokens[ntokens] = tok;
+            char *p = line;
+            while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')
+                p++;
+            if (*p == 0)
+                continue;
+
+            char *keytok = p;
+            while (*p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n')
+                p++;
+            if (*p)
+                *p++ = 0;
+            while (*p == ' ' || *p == '\t')
+                p++;
+            char *val = p;
+            char *end = val + strlen(val);
+            while (end > val && (end[-1] == ' ' || end[-1] == '\t' ||
+                                 end[-1] == '\r' || end[-1] == '\n'))
+                *--end = 0;
+            if (*val == 0) {
+                fprintf(stderr, "%s:%ld: Missing value\n", file, lineno);
+                if (hardfail) exit(EXIT_FAILURE);
+                continue;
             }
 
-            switch (ntokens) {
-                case 0: /* Empty line */
-                    continue;
-                case 1:
-                    fprintf(stderr, "%s:%ld: Missing value\n", file, lineno);
-                    if (hardfail) exit(EXIT_FAILURE);
-                    continue;
-                case 2: /* Expected */
-                    break;
-                case 3:
-                    fprintf(stderr, "%s:%ld: Too many values\n", file, lineno);
-                    if (hardfail) exit(EXIT_FAILURE);
-                    continue;
+            enum config_key key = config_key_parse(keytok);
+            if (key != KEY_SPECIAL_MESSAGE &&
+                (strchr(val, ' ') || strchr(val, '\t'))) {
+                fprintf(stderr, "%s:%ld: Too many values\n", file, lineno);
+                if (hardfail) exit(EXIT_FAILURE);
+                continue;
             }
 
-            enum config_key key = config_key_parse(tokens[0]);
             switch (key) {
                 case KEY_INVALID:
                     fprintf(stderr, "%s:%ld: Unknown option '%s'\n",
-                            file, lineno, tokens[0]);
+                            file, lineno, keytok);
                     break;
                 case KEY_PORT:
-                    config_set_port(c, tokens[1], hardfail);
+                    config_set_port(c, val, hardfail);
                     break;
                 case KEY_DELAY:
-                    config_set_delay(c, tokens[1], hardfail);
+                    config_set_delay(c, val, hardfail);
                     break;
                 case KEY_MAX_LINE_LENGTH:
-                    config_set_max_line_length(c, tokens[1], hardfail);
+                    config_set_max_line_length(c, val, hardfail);
                     break;
                 case KEY_MAX_CLIENTS:
-                    config_set_max_clients(c, tokens[1], hardfail);
+                    config_set_max_clients(c, val, hardfail);
                     break;
                 case KEY_BIND_FAMILY:
-                    config_set_bind_family(c, tokens[1], hardfail);
+                    config_set_bind_family(c, val, hardfail);
+                    break;
+                case KEY_SPECIAL_MESSAGE:
+                    config_set_banner(c, val, hardfail);
                     break;
                 case KEY_LOG_LEVEL: {
                     errno = 0;
-                    char *end;
-                    long v = strtol(tokens[1], &end, 10);
-                    if (errno || *end || v < log_none || v > log_debug) {
+                    char *vend;
+                    long v = strtol(val, &vend, 10);
+                    if (errno || *vend || v < log_none || v > log_debug) {
                         fprintf(stderr, "%s:%ld: Invalid log level '%s'\n",
-                                file, lineno, tokens[1]);
+                                file, lineno, val);
                         if (hardfail) exit(EXIT_FAILURE);
                     } else {
                         loglevel = v;
@@ -516,15 +565,21 @@ config_log(const struct config *c)
         c->bind_family == AF_INET6 ? "IPv6 Only" :
         c->bind_family == AF_INET  ? "IPv4 Only" :
                                 "IPv4 Mapped IPv6");
+    if (c->banner_len)
+        logmsg(log_info, "SpecialMessage %.*s", c->banner_len - 2, c->banner);
+    else
+        logmsg(log_info, "SpecialMessage none");
 }
 
 static void
 usage(FILE *f)
 {
-    fprintf(f, "Usage: endlessh [-vh] [-46] [-d MS] [-f CONFIG] [-l LEN] "
-                               "[-m LIMIT] [-p PORT]\n");
+    fprintf(f, "Usage: endlessh [-vh] [-46] [-b [MSG]] [-d MS] [-f CONFIG] "
+                               "[-l LEN] [-m LIMIT] [-p PORT]\n");
     fprintf(f, "  -4        Bind to IPv4 only\n");
     fprintf(f, "  -6        Bind to IPv6 only\n");
+    fprintf(f, "  -b [STR]  Special first line; omitted STR uses \""
+            DEFAULT_SPECIAL_MESSAGE "\"\n");
     fprintf(f, "  -d INT    Message millisecond delay ["
             XSTR(DEFAULT_DELAY) "]\n");
     fprintf(f, "  -f        Set and load config file ["
@@ -544,6 +599,75 @@ static void
 print_version(void)
 {
     puts("Endlessh " XSTR(ENDLESSH_VERSION));
+}
+
+/* Flags that take no argument and may be clustered with -b. */
+static int
+is_bare_flag(char c)
+{
+    return c == '4' || c == '6' || c == 'h' || c == 's' || c == 'v' || c == 'V';
+}
+
+static int
+takes_arg(char c)
+{
+    return c == 'd' || c == 'f' || c == 'l' || c == 'm' || c == 'p';
+}
+
+static int
+all_bare_flags(const char *s)
+{
+    if (*s == 0)
+        return 0;
+    for (; *s; s++)
+        if (!is_bare_flag(*s))
+            return 0;
+    return 1;
+}
+
+static void
+need_arg(char c)
+{
+    fprintf(stderr, "endlessh: option requires an argument -- %c\n", c);
+    usage(stderr);
+    exit(EXIT_FAILURE);
+}
+
+static void
+bad_opt(char c)
+{
+    fprintf(stderr, "endlessh: invalid option -- %c\n", c);
+    usage(stderr);
+    exit(EXIT_FAILURE);
+}
+
+static void
+apply_bare_flag(int c, struct config *cfig)
+{
+    switch (c) {
+        case '4':
+            config_set_bind_family(cfig, "4", 1);
+            break;
+        case '6':
+            config_set_bind_family(cfig, "6", 1);
+            break;
+        case 'h':
+            usage(stdout);
+            exit(EXIT_SUCCESS);
+        case 's':
+            logmsg = logsyslog;
+            break;
+        case 'v':
+            if (loglevel < log_debug)
+                loglevel++;
+            break;
+        case 'V':
+            print_version();
+            exit(EXIT_SUCCESS);
+        default:
+            usage(stderr);
+            exit(EXIT_FAILURE);
+    }
 }
 
 static int
@@ -605,17 +729,16 @@ server_create(int port, int family)
 
 /* Write a line to a client, returning client if it's still up. */
 static struct client *
-sendline(struct client *client, int max_line_length, unsigned long *rng)
+sendline(struct client *client, const struct config *config, unsigned long *rng)
 {
     char line[256];
     int len;
-    if (!(client->flags & FLAG_SPECIAL_SENT)) {
-        static const char special[] = SPECIAL_MESSAGE;
-        len = sizeof(special) - 1;
-        memcpy(line, special, len);
-        client->flags |= FLAG_SPECIAL_SENT;
+    int special = config->banner_len && !(client->flags & FLAG_SPECIAL_SENT);
+    if (special) {
+        len = config->banner_len;
+        memcpy(line, config->banner, len);
     } else {
-        len = randline(line, max_line_length, rng);
+        len = randline(line, config->max_line_length, rng);
     }
     for (;;) {
         ssize_t out = write(client->fd, line, len);
@@ -630,6 +753,8 @@ sendline(struct client *client, int max_line_length, unsigned long *rng)
                 return 0;
             }
         } else {
+            if (special)
+                client->flags |= FLAG_SPECIAL_SENT;
             client->bytes_sent += out;
             statistics.bytes_sent += out;
             return client;
@@ -653,62 +778,101 @@ main(int argc, char **argv)
 
     config_load(&config, config_file, 1);
 
-    int option;
-    while ((option = getopt(argc, argv, "46d:f:hl:m:p:svV")) != -1) {
-        switch (option) {
-            case '4':
-                config_set_bind_family(&config, "4", 1);
-                break;
-            case '6':
-                config_set_bind_family(&config, "6", 1);
-                break;
-            case 'd':
-                config_set_delay(&config, optarg, 1);
-                break;
-            case 'f':
-                config_file = optarg;
+    for (int i = 1; i < argc; i++) {
+        char *arg = argv[i];
+        if (strcmp(arg, "--") == 0) {
+            if (argv[i + 1]) {
+                fprintf(stderr, "endlessh: too many arguments\n");
+                exit(EXIT_FAILURE);
+            }
+            break;
+        }
+        if (arg[0] != '-' || arg[1] == '\0') {
+            fprintf(stderr, "endlessh: too many arguments\n");
+            exit(EXIT_FAILURE);
+        }
+        if (arg[1] == '-')
+            bad_opt(arg[2] ? arg[2] : '-');
+
+        for (int k = 1; arg[k] != '\0'; k++) {
+            char c = arg[k];
+            const char *value = 0;
+            if (takes_arg(c)) {
+                if (arg[k + 1] != '\0')
+                    value = arg + k + 1;
+                else if (i + 1 < argc)
+                    value = argv[++i];
+                else
+                    need_arg(c);
+                k = (int)strlen(arg) - 1;
+            }
+            switch (c) {
+                case 'b': {
+                    /* A dash word is another flag, not the message.
+                     * `--` ends options, so the word after it may start
+                     * with a dash. Otherwise an omitted message uses the
+                     * built-in line. */
+                    const char *rest = arg + k + 1;
+                    if (rest[0] != '\0' && !all_bare_flags(rest)) {
+                        config_set_banner(&config, rest, 1);
+                        k = (int)strlen(arg) - 1;
+                        break;
+                    }
+                    for (const char *p = rest; *p; p++)
+                        apply_bare_flag(*p, &config);
+                    k = (int)strlen(arg) - 1;
+                    if (i + 1 < argc && strcmp(argv[i + 1], "--") == 0) {
+                        i++;
+                        if (i + 1 < argc)
+                            config_set_banner(&config, argv[++i], 1);
+                        else
+                            config_set_banner(&config, DEFAULT_SPECIAL_MESSAGE, 1);
+                        if (i + 1 < argc) {
+                            fprintf(stderr, "endlessh: too many arguments\n");
+                            exit(EXIT_FAILURE);
+                        }
+                    } else if (i + 1 < argc && argv[i + 1][0] != '-') {
+                        config_set_banner(&config, argv[++i], 1);
+                    } else {
+                        config_set_banner(&config, DEFAULT_SPECIAL_MESSAGE, 1);
+                    }
+                    break;
+                }
+                case '4':
+                case '6':
+                case 'h':
+                case 's':
+                case 'v':
+                case 'V':
+                    apply_bare_flag(c, &config);
+                    break;
+                case 'd':
+                    config_set_delay(&config, value, 1);
+                    break;
+                case 'f':
+                    config_file = value;
 
 #if defined(__OpenBSD__)
-                unveil(config_file, "r");
-                if (unveil(0, 0) == -1)
-                    die();
+                    unveil(config_file, "r");
+                    if (unveil(0, 0) == -1)
+                        die();
 #endif
 
-                config_load(&config, optarg, 1);
-                break;
-            case 'h':
-                usage(stdout);
-                exit(EXIT_SUCCESS);
-                break;
-            case 'l':
-                config_set_max_line_length(&config, optarg, 1);
-                break;
-            case 'm':
-                config_set_max_clients(&config, optarg, 1);
-                break;
-            case 'p':
-                config_set_port(&config, optarg, 1);
-                break;
-            case 's':
-                logmsg = logsyslog;
-                break;
-            case 'v':
-                if (loglevel < log_debug)
-                    loglevel++;
-                break;
-            case 'V':
-                print_version();
-                exit(EXIT_SUCCESS);
-                break;
-            default:
-                usage(stderr);
-                exit(EXIT_FAILURE);
+                    config_load(&config, value, 1);
+                    break;
+                case 'l':
+                    config_set_max_line_length(&config, value, 1);
+                    break;
+                case 'm':
+                    config_set_max_clients(&config, value, 1);
+                    break;
+                case 'p':
+                    config_set_port(&config, value, 1);
+                    break;
+                default:
+                    bad_opt(c);
+            }
         }
-    }
-
-    if (argv[optind]) {
-        fprintf(stderr, "endlessh: too many arguments\n");
-        exit(EXIT_FAILURE);
     }
 
     if (logmsg == logsyslog) {
@@ -777,7 +941,7 @@ main(int argc, char **argv)
         while (fifo->head) {
             if (fifo->head->send_next <= now) {
                 struct client *c = fifo_pop(fifo);
-                if (sendline(c, config.max_line_length, &rng)) {
+                if (sendline(c, &config, &rng)) {
                     c->send_next = now + config.delay;
                     fifo_append(fifo, c);
                 }
