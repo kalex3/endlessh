@@ -1,0 +1,15 @@
+services:
+  endlessh:
+    image: ghcr.io/kalex3/endlessh:latest
+    container_name: endlessh
+    restart: unless-stopped
+    read_only: true
+    mem_limit: 128m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - 127.0.0.1:2222:2222
+    volumes:
+      - ./config:/etc/endlessh/config:ro
