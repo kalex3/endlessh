@@ -574,12 +574,12 @@ config_log(const struct config *c)
 static void
 usage(FILE *f)
 {
-    fprintf(f, "Usage: endlessh [-vh] [-46] [-b [MSG]] [-d MS] [-f CONFIG] "
+    fprintf(f, "Usage: endlessh [-vh] [-46] [-b] [-d MS] [-f CONFIG] "
                                "[-l LEN] [-m LIMIT] [-p PORT]\n");
     fprintf(f, "  -4        Bind to IPv4 only\n");
     fprintf(f, "  -6        Bind to IPv6 only\n");
-    fprintf(f, "  -b [STR]  Special first line; omitted STR uses \""
-            DEFAULT_SPECIAL_MESSAGE "\"\n");
+    fprintf(f, "  -b        Send \"" DEFAULT_SPECIAL_MESSAGE
+            "\" as the first line\n");
     fprintf(f, "  -d INT    Message millisecond delay ["
             XSTR(DEFAULT_DELAY) "]\n");
     fprintf(f, "  -f        Set and load config file ["
@@ -599,75 +599,6 @@ static void
 print_version(void)
 {
     puts("Endlessh " XSTR(ENDLESSH_VERSION));
-}
-
-/* Flags that take no argument and may be clustered with -b. */
-static int
-is_bare_flag(char c)
-{
-    return c == '4' || c == '6' || c == 'h' || c == 's' || c == 'v' || c == 'V';
-}
-
-static int
-takes_arg(char c)
-{
-    return c == 'd' || c == 'f' || c == 'l' || c == 'm' || c == 'p';
-}
-
-static int
-all_bare_flags(const char *s)
-{
-    if (*s == 0)
-        return 0;
-    for (; *s; s++)
-        if (!is_bare_flag(*s))
-            return 0;
-    return 1;
-}
-
-static void
-need_arg(char c)
-{
-    fprintf(stderr, "endlessh: option requires an argument -- %c\n", c);
-    usage(stderr);
-    exit(EXIT_FAILURE);
-}
-
-static void
-bad_opt(char c)
-{
-    fprintf(stderr, "endlessh: invalid option -- %c\n", c);
-    usage(stderr);
-    exit(EXIT_FAILURE);
-}
-
-static void
-apply_bare_flag(int c, struct config *cfig)
-{
-    switch (c) {
-        case '4':
-            config_set_bind_family(cfig, "4", 1);
-            break;
-        case '6':
-            config_set_bind_family(cfig, "6", 1);
-            break;
-        case 'h':
-            usage(stdout);
-            exit(EXIT_SUCCESS);
-        case 's':
-            logmsg = logsyslog;
-            break;
-        case 'v':
-            if (loglevel < log_debug)
-                loglevel++;
-            break;
-        case 'V':
-            print_version();
-            exit(EXIT_SUCCESS);
-        default:
-            usage(stderr);
-            exit(EXIT_FAILURE);
-    }
 }
 
 static int
@@ -778,101 +709,65 @@ main(int argc, char **argv)
 
     config_load(&config, config_file, 1);
 
-    for (int i = 1; i < argc; i++) {
-        char *arg = argv[i];
-        if (strcmp(arg, "--") == 0) {
-            if (argv[i + 1]) {
-                fprintf(stderr, "endlessh: too many arguments\n");
-                exit(EXIT_FAILURE);
-            }
-            break;
-        }
-        if (arg[0] != '-' || arg[1] == '\0') {
-            fprintf(stderr, "endlessh: too many arguments\n");
-            exit(EXIT_FAILURE);
-        }
-        if (arg[1] == '-')
-            bad_opt(arg[2] ? arg[2] : '-');
-
-        for (int k = 1; arg[k] != '\0'; k++) {
-            char c = arg[k];
-            const char *value = 0;
-            if (takes_arg(c)) {
-                if (arg[k + 1] != '\0')
-                    value = arg + k + 1;
-                else if (i + 1 < argc)
-                    value = argv[++i];
-                else
-                    need_arg(c);
-                k = (int)strlen(arg) - 1;
-            }
-            switch (c) {
-                case 'b': {
-                    /* A dash word is another flag, not the message.
-                     * `--` ends options, so the word after it may start
-                     * with a dash. Otherwise an omitted message uses the
-                     * built-in line. */
-                    const char *rest = arg + k + 1;
-                    if (rest[0] != '\0' && !all_bare_flags(rest)) {
-                        config_set_banner(&config, rest, 1);
-                        k = (int)strlen(arg) - 1;
-                        break;
-                    }
-                    for (const char *p = rest; *p; p++)
-                        apply_bare_flag(*p, &config);
-                    k = (int)strlen(arg) - 1;
-                    if (i + 1 < argc && strcmp(argv[i + 1], "--") == 0) {
-                        i++;
-                        if (i + 1 < argc)
-                            config_set_banner(&config, argv[++i], 1);
-                        else
-                            config_set_banner(&config, DEFAULT_SPECIAL_MESSAGE, 1);
-                        if (i + 1 < argc) {
-                            fprintf(stderr, "endlessh: too many arguments\n");
-                            exit(EXIT_FAILURE);
-                        }
-                    } else if (i + 1 < argc && argv[i + 1][0] != '-') {
-                        config_set_banner(&config, argv[++i], 1);
-                    } else {
-                        config_set_banner(&config, DEFAULT_SPECIAL_MESSAGE, 1);
-                    }
-                    break;
-                }
-                case '4':
-                case '6':
-                case 'h':
-                case 's':
-                case 'v':
-                case 'V':
-                    apply_bare_flag(c, &config);
-                    break;
-                case 'd':
-                    config_set_delay(&config, value, 1);
-                    break;
-                case 'f':
-                    config_file = value;
+    int option;
+    while ((option = getopt(argc, argv, "46bd:f:hl:m:p:svV")) != -1) {
+        switch (option) {
+            case '4':
+                config_set_bind_family(&config, "4", 1);
+                break;
+            case '6':
+                config_set_bind_family(&config, "6", 1);
+                break;
+            case 'b':
+                config_set_banner(&config, DEFAULT_SPECIAL_MESSAGE, 1);
+                break;
+            case 'd':
+                config_set_delay(&config, optarg, 1);
+                break;
+            case 'f':
+                config_file = optarg;
 
 #if defined(__OpenBSD__)
-                    unveil(config_file, "r");
-                    if (unveil(0, 0) == -1)
-                        die();
+                unveil(config_file, "r");
+                if (unveil(0, 0) == -1)
+                    die();
 #endif
 
-                    config_load(&config, value, 1);
-                    break;
-                case 'l':
-                    config_set_max_line_length(&config, value, 1);
-                    break;
-                case 'm':
-                    config_set_max_clients(&config, value, 1);
-                    break;
-                case 'p':
-                    config_set_port(&config, value, 1);
-                    break;
-                default:
-                    bad_opt(c);
-            }
+                config_load(&config, optarg, 1);
+                break;
+            case 'h':
+                usage(stdout);
+                exit(EXIT_SUCCESS);
+                break;
+            case 'l':
+                config_set_max_line_length(&config, optarg, 1);
+                break;
+            case 'm':
+                config_set_max_clients(&config, optarg, 1);
+                break;
+            case 'p':
+                config_set_port(&config, optarg, 1);
+                break;
+            case 's':
+                logmsg = logsyslog;
+                break;
+            case 'v':
+                if (loglevel < log_debug)
+                    loglevel++;
+                break;
+            case 'V':
+                print_version();
+                exit(EXIT_SUCCESS);
+                break;
+            default:
+                usage(stderr);
+                exit(EXIT_FAILURE);
         }
+    }
+
+    if (argv[optind]) {
+        fprintf(stderr, "endlessh: too many arguments\n");
+        exit(EXIT_FAILURE);
     }
 
     if (logmsg == logsyslog) {

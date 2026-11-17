@@ -16,10 +16,10 @@ trap multiple clients at a time.
 Usage information is printed with `-h`.
 
 ```
-Usage: endlessh [-vhs] [-b [MSG]] [-d MS] [-f CONFIG] [-l LEN] [-m LIMIT] [-p PORT]
+Usage: endlessh [-vhs] [-b] [-d MS] [-f CONFIG] [-l LEN] [-m LIMIT] [-p PORT]
   -4        Bind to IPv4 only
   -6        Bind to IPv6 only
-  -b [STR]  Special first line; omitted STR uses "Stay awhile and listen"
+  -b        Send "Stay awhile and listen" as the first line
   -d INT    Message millisecond delay [10000]
   -f        Set and load config file [/etc/endlessh/config]
   -h        Print this help message and exit
@@ -34,9 +34,9 @@ Argument order matters. The configuration file is loaded when the `-f`
 argument is processed, so only the options that follow will override the
 configuration file.
 
-`-b` alone sends `Stay awhile and listen`. A custom message that starts
-with `-` is written `-b -- -message` or `-b-message`. `--` ends option
-parsing, so later words are not flags.
+`-b` sends `Stay awhile and listen` as the first line of each connection.
+A different line is set with `SpecialMessage` in the config file. `-b`
+after `-f` replaces the file's line with that sentence.
 
 By default no log messages are produced. The first `-v` enables basic
 logging and a second `-v` enables debugging logging (noisy). All log

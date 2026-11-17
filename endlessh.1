@@ -7,7 +7,6 @@
 .Sh SYNOPSIS
 .Nm endless
 .Op Fl 46bchsvV
-.Op Fl b Op Ar message
 .Op Fl d Ar delay
 .Op Fl f Ar config
 .Op Fl l Ar max banner length
@@ -39,27 +38,23 @@ to use IPv4 addresses only.
 Forces
 .Nm
 to use IPv6 addresses only.
-.It Fl b Op Ar message
-Send this text once, as the first line of each connection,
+.It Fl b
+Send
+.Dq Stay awhile and listen
+once, as the first line of each connection,
 followed by a carriage return and line feed.
 Later lines are the usual random banner.
-If
-.Ar message
-is omitted, it defaults to
-.Dq Stay awhile and listen .
-The message must not begin with
+A different line is set with
+.Cm SpecialMessage
+in the configuration file.
+The text must not begin with
 .Dq SSH-
 and is limited to 253 characters.
-An empty string disables it.
 Without
-.Fl b ,
+.Fl b
+or
+.Cm SpecialMessage ,
 no special line is sent.
-A message that begins with a dash is attached to the flag,
-as in
-.Fl b-message ,
-or given after
-.Cm -- ,
-which ends option parsing.
 .It Fl d Ar delay
 Message milliseconds delay. Default: 10000
 .It Fl f Ar config
