@@ -94,6 +94,10 @@ receives the SIGTERM signal it will gracefully shut
 down the daemon, allowing it to write a complete, consistent log.
 .Pp
 A SIGHUP signal requests a reload of its configuration file.
+.Ev ENDLESSH_SPECIAL_MESSAGE
+and
+.Fl b
+are applied again when they were the later setting.
 .Pp
 A SIGUSR1 signal will print connections stats to the log.
 .Sh ENVIRONMENT

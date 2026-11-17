@@ -51,6 +51,8 @@ A SIGTERM signal will gracefully shut down the daemon, allowing it to
 write a complete, consistent log.
 
 A SIGHUP signal requests a reload of the configuration file (`-f`).
+`ENDLESSH_SPECIAL_MESSAGE` and `-b` are applied again when they were
+the later setting.
 
 A SIGUSR1 signal will print connections stats to the log.
 

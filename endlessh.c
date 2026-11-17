@@ -26,7 +26,7 @@
 #include <netinet/in.h>
 #include <syslog.h>
 
-#define ENDLESSH_VERSION           1.1
+#define ENDLESSH_VERSION           1.2
 
 #define DEFAULT_PORT              2222
 #define DEFAULT_DELAY            10000  /* milliseconds */
@@ -709,10 +709,15 @@ main(int argc, char **argv)
 
     config_load(&config, config_file, 1);
 
-    /* After the default file, before flags, so -b and a later -f still win. */
+    /* After the default file, before flags, so -b and a later -f still win.
+     * The same choice is re-applied on SIGHUP, which only reloads the file. */
+    int banner_env_wins = 0;
+    int banner_flag_wins = 0;
     const char *banner_env = getenv("ENDLESSH_SPECIAL_MESSAGE");
-    if (banner_env)
+    if (banner_env) {
         config_set_banner(&config, banner_env, 1);
+        banner_env_wins = 1;
+    }
 
     int option;
     while ((option = getopt(argc, argv, "46bd:f:hl:m:p:svV")) != -1) {
@@ -725,6 +730,8 @@ main(int argc, char **argv)
                 break;
             case 'b':
                 config_set_banner(&config, DEFAULT_SPECIAL_MESSAGE, 1);
+                banner_flag_wins = 1;
+                banner_env_wins = 0;
                 break;
             case 'd':
                 config_set_delay(&config, optarg, 1);
@@ -739,6 +746,8 @@ main(int argc, char **argv)
 #endif
 
                 config_load(&config, optarg, 1);
+                banner_env_wins = 0;
+                banner_flag_wins = 0;
                 break;
             case 'h':
                 usage(stdout);
@@ -822,6 +831,10 @@ main(int argc, char **argv)
             int oldport = config.port;
             int oldfamily = config.bind_family;
             config_load(&config, config_file, 0);
+            if (banner_flag_wins)
+                config_set_banner(&config, DEFAULT_SPECIAL_MESSAGE, 0);
+            else if (banner_env_wins)
+                config_set_banner(&config, banner_env, 0);
             config_log(&config);
             if (oldport != config.port || oldfamily != config.bind_family) {
                 close(server);
