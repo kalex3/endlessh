@@ -46,14 +46,18 @@ followed by a carriage return and line feed.
 Later lines are the usual random banner.
 A different line is set with
 .Cm SpecialMessage
-in the configuration file.
+in the configuration file,
+or with the
+.Ev ENDLESSH_SPECIAL_MESSAGE
+environment variable.
 The text must not begin with
 .Dq SSH-
 and is limited to 253 characters.
 Without
-.Fl b
-or
+.Fl b ,
 .Cm SpecialMessage ,
+or
+.Ev ENDLESSH_SPECIAL_MESSAGE ,
 no special line is sent.
 .It Fl d Ar delay
 Message milliseconds delay. Default: 10000
@@ -92,6 +96,22 @@ down the daemon, allowing it to write a complete, consistent log.
 A SIGHUP signal requests a reload of its configuration file.
 .Pp
 A SIGUSR1 signal will print connections stats to the log.
+.Sh ENVIRONMENT
+.Bl -tag -width Ds
+.It Ev ENDLESSH_SPECIAL_MESSAGE
+Text sent once, as the first line of each connection,
+followed by a carriage return and line feed.
+When set, it replaces the special line from the default
+configuration file.
+An empty value clears the line.
+.Fl b
+and a configuration file loaded later with
+.Fl f
+override it.
+The text must not begin with
+.Dq SSH-
+and is limited to 253 characters.
+.El
 .Sh FILES
 .Bl -tag -width /etc/endlessh/config -compact
 .It Pa /etc/endlessh/config

@@ -709,6 +709,11 @@ main(int argc, char **argv)
 
     config_load(&config, config_file, 1);
 
+    /* After the default file, before flags, so -b and a later -f still win. */
+    const char *banner_env = getenv("ENDLESSH_SPECIAL_MESSAGE");
+    if (banner_env)
+        config_set_banner(&config, banner_env, 1);
+
     int option;
     while ((option = getopt(argc, argv, "46bd:f:hl:m:p:svV")) != -1) {
         switch (option) {

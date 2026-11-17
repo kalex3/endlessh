@@ -35,8 +35,10 @@ argument is processed, so only the options that follow will override the
 configuration file.
 
 `-b` sends `Stay awhile and listen` as the first line of each connection.
-A different line is set with `SpecialMessage` in the config file. `-b`
-after `-f` replaces the file's line with that sentence.
+A different line is `SpecialMessage` in the config file. When
+`ENDLESSH_SPECIAL_MESSAGE` is set, it replaces the line from the default
+config file; an empty value clears it. `-b` and a later `-f` still
+override it. `-b` after `-f` replaces the file's line with that sentence.
 
 By default no log messages are produced. The first `-v` enables basic
 logging and a second `-v` enables debugging logging (noisy). All log
@@ -88,6 +90,7 @@ BindFamily 0
 # Optional text sent once, as the first line of each connection.
 # The rest of the line is the text. It must not begin with "SSH-"
 # and is limited to 253 characters.
+# Or set ENDLESSH_SPECIAL_MESSAGE in the environment.
 # SpecialMessage Stay awhile and listen
 ```
 
